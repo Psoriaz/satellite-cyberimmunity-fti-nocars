@@ -9,7 +9,7 @@ from src.system.config import CRITICALITY_STR, LOG_DEBUG, \
     OPTICS_CONTROL_QUEUE_NAME, ORBIT_DRAWER_QUEUE_NAME
 
 class OpticsControl(BaseCustomProcess):
-    """ Модуль управления потической аппаратурой """
+    """ Модуль управления оптической аппаратурой """
     log_prefix = "[OPTIC]"
     event_source_name = OPTICS_CONTROL_QUEUE_NAME
     events_q_name = event_source_name
