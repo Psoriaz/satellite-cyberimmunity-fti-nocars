@@ -1,5 +1,7 @@
 from src.system.custom_process import BaseCustomProcess
 from src.system.event_types import Event
+from src.satellite_control_system.orbit_monitoring import OrbitMonitor
+from src.satellite_control_system.orbit_limiter import OrbitLimiter
 
 #Написал для тестов
 class SecurityMonitor(BaseCustomProcess):
