@@ -1,10 +1,9 @@
-CLIENT_QUEUE_NAME = "client"  # клиент
 CONNECTION_QUEUE_NAME = "connection"  # модуль связь
 AUTHORIZE_QUEUE_NAME = "authorize"  # модуль авторизации
 CENTRAL_CONTROL_SYSTEM_QUEUE_NAME = "central_control_system"  # ЦСУ
 IMAGE_STORAGE_QUEUE_NAME = "image_storage"  # хранилище изображений
 RESTRICTED_ZONE_STORAGE_QUEUE_NAME = (
-    "forbidden_zone_storage"  # хранилище запрещенных зон
+    "restricted_zone_storage"  # хранилище запрещенных зон
 )
 INTERPRETATOR_QUEUE_NAME = "interpretator"  # интерпретатор
 ORBIT_MONITORING_QUEUE_NAME = "orbit_monitoring"  # монитооринг орбиты
