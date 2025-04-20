@@ -48,36 +48,6 @@ class RestrictedZonesManager(BaseCustomProcess):
             )
         )
 
-    def _check_point_in_zones(self, lat, lon):
-        """Проверка, находится ли точка в запрещенных зонах"""
-        point_key = (lat, lon)
-        if point_key in self._checked_points:
-            return self._checked_points[point_key]
-
-        for zone in self._zones_cache:
-            if (
-                zone.lat_bot_left <= lat <= zone.lat_top_right
-                and zone.lon_bot_left <= lon <= zone.lon_top_right
-            ):
-                self._log_message(
-                    LOG_INFO,
-                    f"Точка ({lat:.3f},{lon:.3f}) в запрещенной зоне: {zone.lat_bot_left:.3f},{zone.lon_bot_left:.3f} - {zone.lat_top_right:.3f},{zone.lon_top_right:.3f}",
-                )
-
-                # Сохраняем и возвращаем результат
-                self._checked_points[point_key] = True
-                return True
-
-        # Если не нашли совпадений
-        self._log_message(
-            LOG_DEBUG,
-            f"Точка ({lat},{lon}) НЕ в запрещенной зоне. Проверено {len(self._zones_cache)} зон",
-        )
-
-        # Сохраняем в кэш и возвращаем результат
-        self._checked_points[point_key] = False
-        return False
-
     def _update_central_system(self):
         """Отправка обновления о зонах в центральную систему"""
         try:
@@ -166,34 +136,6 @@ class RestrictedZonesManager(BaseCustomProcess):
                                 operation="remove_restricted_zone",
                                 parameters=zone_id,
                             )
-                        )
-
-                    case "check_point":
-                        # Проверка точки на нахождение в запрещенных зонах
-                        lat, lon = event.parameters
-                        self._log_message(
-                            LOG_INFO, f"Запрос на проверку точки: {lat:.3f}, {lon:.3f}"
-                        )
-
-                        # Проверяем, попадает ли точка в запрещенную зону
-                        is_restricted = self._check_point_in_zones(lat, lon)
-
-                        # Отправка результата проверки в центральную систему
-                        q: Queue = self._queues_dir.get_queue(
-                            SECURITY_MONITOR_QUEUE_NAME
-                        )
-                        q.put(
-                            Event(
-                                source=self.event_source_name,
-                                destination=CENTRAL_CONTROL_SYSTEM_QUEUE_NAME,
-                                operation="point_check_result",
-                                parameters=(lat, lon, is_restricted),
-                            )
-                        )
-
-                        self._log_message(
-                            LOG_INFO,
-                            f"Результат проверки точки ({lat:.3f},{lon:.3f}): {'ЗАПРЕЩЕНА' if is_restricted else 'разрешена'}",
                         )
 
                     case "all_zones_data":
