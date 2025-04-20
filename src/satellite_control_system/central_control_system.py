@@ -251,7 +251,7 @@ class CentralControlSystem(BaseCustomProcess):
                         lat, lon, timestamp = event.parameters
                         self._log_message(
                             LOG_INFO,
-                            f"Изображение успешно сохранено: ({lat:.3f},{lon:.3f}), время={timestamp}",
+                            f"Изображение успешно сохранено: ({lat:.3f},{lon:.3f}), timestamp={timestamp}",
                         )
 
                     case "get_all_images":

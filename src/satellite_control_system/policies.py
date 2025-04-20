@@ -24,12 +24,12 @@ security_policies = [
     ),
     # Пользователь с спец. возможностями -> AuthorizationModule
     SecurityPolicy(
-        source="special",
+        source="client_trusted",
         destination=AUTHORIZATION_MODULE_QUEUE_NAME,
         operation="request_photo",
     ),
     SecurityPolicy(
-        source="special",
+        source="client_trusted",
         destination=AUTHORIZATION_MODULE_QUEUE_NAME,
         operation="change_orbit",
     ),
