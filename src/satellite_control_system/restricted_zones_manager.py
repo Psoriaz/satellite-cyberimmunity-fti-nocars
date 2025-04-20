@@ -8,15 +8,16 @@ from src.system.config import (
     LOG_ERROR,
     LOG_INFO,
     DEFAULT_LOG_LEVEL,
-    OPTICS_CONTROL_QUEUE_NAME,
+    SECURITY_MONITOR_QUEUE_NAME,
     RESTRICTED_ZONE_STORAGE_QUEUE_NAME,
     RESTRICTED_ZONES_MANAGER_QUEUE_NAME,
     CENTRAL_CONTROL_SYSTEM_QUEUE_NAME,
+    ORBIT_DRAWER_QUEUE_NAME,
 )
 
 
 class RestrictedZonesManager(BaseCustomProcess):
-    """Модуль работы с запрещенными зонами (желтый домен)"""
+    """Модуль работы с запрещенными зонами"""
 
     log_prefix = "[ZONES_MGR]"
     event_source_name = RESTRICTED_ZONES_MANAGER_QUEUE_NAME
@@ -37,8 +38,8 @@ class RestrictedZonesManager(BaseCustomProcess):
 
     def _request_zones_list(self):
         """Запрос списка зон из хранилища"""
-        storage_q = self._queues_dir.get_queue(RESTRICTED_ZONE_STORAGE_QUEUE_NAME)
-        storage_q.put(
+        q: Queue = self._queues_dir.get_queue(SECURITY_MONITOR_QUEUE_NAME)
+        q.put(
             Event(
                 source=self.event_source_name,
                 destination=RESTRICTED_ZONE_STORAGE_QUEUE_NAME,
@@ -49,13 +50,10 @@ class RestrictedZonesManager(BaseCustomProcess):
 
     def _check_point_in_zones(self, lat, lon):
         """Проверка, находится ли точка в запрещенных зонах"""
-
-        # Проверяем кэш
         point_key = (lat, lon)
         if point_key in self._checked_points:
             return self._checked_points[point_key]
 
-        # Проверяем по всем зонам
         for zone in self._zones_cache:
             if (
                 zone.lat_bot_left <= lat <= zone.lat_top_right
@@ -66,7 +64,7 @@ class RestrictedZonesManager(BaseCustomProcess):
                     f"Точка ({lat:.3f},{lon:.3f}) в запрещенной зоне: {zone.lat_bot_left:.3f},{zone.lon_bot_left:.3f} - {zone.lat_top_right:.3f},{zone.lon_top_right:.3f}",
                 )
 
-                # Сохраняем в кэш и возвращаем результат
+                # Сохраняем и возвращаем результат
                 self._checked_points[point_key] = True
                 return True
 
@@ -83,8 +81,8 @@ class RestrictedZonesManager(BaseCustomProcess):
     def _update_central_system(self):
         """Отправка обновления о зонах в центральную систему"""
         try:
-            central_q = self._queues_dir.get_queue(CENTRAL_CONTROL_SYSTEM_QUEUE_NAME)
-            central_q.put(
+            q: Queue = self._queues_dir.get_queue(SECURITY_MONITOR_QUEUE_NAME)
+            q.put(
                 Event(
                     source=self.event_source_name,
                     destination=CENTRAL_CONTROL_SYSTEM_QUEUE_NAME,
@@ -118,18 +116,36 @@ class RestrictedZonesManager(BaseCustomProcess):
                             f"Запрос на добавление зоны: id={zone_id}, координаты={lat1:.3f},{lon1:.3f} - {lat2:.3f},{lon2:.3f}",
                         )
 
-                        # Сбрасываем кэш проверенных точек при изменении зон
                         self._checked_points = {}
 
-                        storage_q = self._queues_dir.get_queue(
-                            RESTRICTED_ZONE_STORAGE_QUEUE_NAME
+                        q: Queue = self._queues_dir.get_queue(
+                            SECURITY_MONITOR_QUEUE_NAME
                         )
-                        storage_q.put(
+                        q.put(
                             Event(
                                 source=self.event_source_name,
                                 destination=RESTRICTED_ZONE_STORAGE_QUEUE_NAME,
                                 operation="add_restricted_zone",
                                 parameters=(zone_id, lat1, lon1, lat2, lon2),
+                            )
+                        )
+
+                    case "draw_zone":
+                        zone_id, zone = event.parameters
+                        self._log_message(
+                            LOG_INFO,
+                            f"Запрос на отрисовку зоны: id={zone_id}",
+                        )
+
+                        q: Queue = self._queues_dir.get_queue(
+                            SECURITY_MONITOR_QUEUE_NAME
+                        )
+                        q.put(
+                            Event(
+                                source=self.event_source_name,
+                                destination=ORBIT_DRAWER_QUEUE_NAME,
+                                operation="draw_restricted_zone",
+                                parameters=zone,
                             )
                         )
 
@@ -140,10 +156,10 @@ class RestrictedZonesManager(BaseCustomProcess):
                         # Сбрасываем кэш проверенных точек при изменении зон
                         self._checked_points = {}
 
-                        storage_q = self._queues_dir.get_queue(
-                            RESTRICTED_ZONE_STORAGE_QUEUE_NAME
+                        q: Queue = self._queues_dir.get_queue(
+                            SECURITY_MONITOR_QUEUE_NAME
                         )
-                        storage_q.put(
+                        q.put(
                             Event(
                                 source=self.event_source_name,
                                 destination=RESTRICTED_ZONE_STORAGE_QUEUE_NAME,
@@ -163,10 +179,10 @@ class RestrictedZonesManager(BaseCustomProcess):
                         is_restricted = self._check_point_in_zones(lat, lon)
 
                         # Отправка результата проверки в центральную систему
-                        central_q = self._queues_dir.get_queue(
-                            CENTRAL_CONTROL_SYSTEM_QUEUE_NAME
+                        q: Queue = self._queues_dir.get_queue(
+                            SECURITY_MONITOR_QUEUE_NAME
                         )
-                        central_q.put(
+                        q.put(
                             Event(
                                 source=self.event_source_name,
                                 destination=CENTRAL_CONTROL_SYSTEM_QUEUE_NAME,
@@ -181,9 +197,9 @@ class RestrictedZonesManager(BaseCustomProcess):
                         )
 
                     case "all_zones_data":
-                        # Обновление кэша зон
+                        # Обновление зон
                         self._zones_cache = event.parameters
-                        # Сбрасываем кэш проверенных точек при обновлении зон
+                        # Сбрасываем проверенные точки при обновлении зон
                         self._checked_points = {}
 
                         self._log_message(
@@ -193,7 +209,6 @@ class RestrictedZonesManager(BaseCustomProcess):
                         # Отправляем обновленные данные в центральную систему
                         self._update_central_system()
 
-                        # Логирование зон для отладки
                         for i, zone in enumerate(self._zones_cache):
                             self._log_message(
                                 LOG_DEBUG,

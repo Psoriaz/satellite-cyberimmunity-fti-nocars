@@ -7,17 +7,15 @@ from src.system.config import (
     LOG_DEBUG,
     LOG_ERROR,
     LOG_INFO,
+    SECURITY_MONITOR_QUEUE_NAME,
     DEFAULT_LOG_LEVEL,
     CENTRAL_CONTROL_SYSTEM_QUEUE_NAME,
     OPTICS_CONTROL_QUEUE_NAME,
-    ORBIT_CONTROL_QUEUE_NAME,
     RESTRICTED_ZONES_MANAGER_QUEUE_NAME,
-    RESTRICTED_ZONE_STORAGE_QUEUE_NAME,
-    SATELITE_QUEUE_NAME,
     CAMERA_QUEUE_NAME,
     ORBIT_MONITORING_QUEUE_NAME,
     IMAGE_STORAGE_QUEUE_NAME,
-    SECURITY_MONITOR_QUEUE_NAME,
+    SATELITE_QUEUE_NAME,
 )
 import time
 
@@ -54,9 +52,11 @@ class CentralControlSystem(BaseCustomProcess):
                         self._log_message(
                             LOG_INFO, "Получен запрос на фотографирование"
                         )
-                        # Перенаправляем запрос в камеру напрямую
-                        camera_q = self._queues_dir.get_queue(CAMERA_QUEUE_NAME)
-                        camera_q.put(
+                        # Перенаправляем запрос в камеру
+                        q: Queue = self._queues_dir.get_queue(
+                            SECURITY_MONITOR_QUEUE_NAME
+                        )
+                        q.put(
                             Event(
                                 source=self.event_source_name,
                                 destination=CAMERA_QUEUE_NAME,
@@ -70,10 +70,10 @@ class CentralControlSystem(BaseCustomProcess):
                             LOG_INFO, "Получен запрос на добавление запрещенной зоны"
                         )
                         # Перенаправляем запрос в менеджер зон
-                        zones_mgr_q = self._queues_dir.get_queue(
-                            RESTRICTED_ZONES_MANAGER_QUEUE_NAME
+                        q: Queue = self._queues_dir.get_queue(
+                            SECURITY_MONITOR_QUEUE_NAME
                         )
-                        zones_mgr_q.put(
+                        q.put(
                             Event(
                                 source=self.event_source_name,
                                 destination=RESTRICTED_ZONES_MANAGER_QUEUE_NAME,
@@ -87,10 +87,10 @@ class CentralControlSystem(BaseCustomProcess):
                             LOG_INFO, "Получен запрос на удаление запрещенной зоны"
                         )
                         # Перенаправляем запрос в менеджер зон
-                        zones_mgr_q = self._queues_dir.get_queue(
-                            RESTRICTED_ZONES_MANAGER_QUEUE_NAME
+                        q: Queue = self._queues_dir.get_queue(
+                            SECURITY_MONITOR_QUEUE_NAME
                         )
-                        zones_mgr_q.put(
+                        q.put(
                             Event(
                                 source=self.event_source_name,
                                 destination=RESTRICTED_ZONES_MANAGER_QUEUE_NAME,
@@ -104,10 +104,10 @@ class CentralControlSystem(BaseCustomProcess):
                             LOG_INFO, "Получен запрос на изменение орбиты"
                         )
                         # Перенаправляем запрос в модуль мониторинга орбиты
-                        orbit_mon_q = self._queues_dir.get_queue(
-                            ORBIT_MONITORING_QUEUE_NAME
+                        q: Queue = self._queues_dir.get_queue(
+                            SECURITY_MONITOR_QUEUE_NAME
                         )
-                        orbit_mon_q.put(
+                        q.put(
                             Event(
                                 source=self.event_source_name,
                                 destination=ORBIT_MONITORING_QUEUE_NAME,
@@ -120,7 +120,6 @@ class CentralControlSystem(BaseCustomProcess):
                             "Запрос на изменение орбиты передан в модуль мониторинга орбиты",
                         )
 
-                    # Обработка сообщений от менеджера зон
                     case "zones_update":
                         self._zones_cache = event.parameters
                         self._log_message(
@@ -129,8 +128,10 @@ class CentralControlSystem(BaseCustomProcess):
                         )
 
                         # Передаем информацию в модуль оптики
-                        optics_q = self._queues_dir.get_queue(OPTICS_CONTROL_QUEUE_NAME)
-                        optics_q.put(
+                        q: Queue = self._queues_dir.get_queue(
+                            SECURITY_MONITOR_QUEUE_NAME
+                        )
+                        q.put(
                             Event(
                                 source=self.event_source_name,
                                 destination=OPTICS_CONTROL_QUEUE_NAME,
@@ -146,9 +147,11 @@ class CentralControlSystem(BaseCustomProcess):
                             LOG_INFO, f"Получены координаты от камеры: {lat}, {lon}"
                         )
 
-                        # Передаем в модуль оптики для проверки и обработки
-                        optics_q = self._queues_dir.get_queue(OPTICS_CONTROL_QUEUE_NAME)
-                        optics_q.put(
+                        # Передаем координаты в модуль оптики для проверки и обработки
+                        q: Queue = self._queues_dir.get_queue(
+                            SECURITY_MONITOR_QUEUE_NAME
+                        )
+                        q.put(
                             Event(
                                 source=self.event_source_name,
                                 destination=OPTICS_CONTROL_QUEUE_NAME,
@@ -157,7 +160,6 @@ class CentralControlSystem(BaseCustomProcess):
                             )
                         )
 
-                    # Сообщения от камеры с фотографией - передаем в оптику
                     case "post_photo":
                         lat, lon = event.parameters
                         self._log_message(
@@ -165,8 +167,10 @@ class CentralControlSystem(BaseCustomProcess):
                         )
 
                         # Передаем в модуль оптики
-                        optics_q = self._queues_dir.get_queue(OPTICS_CONTROL_QUEUE_NAME)
-                        optics_q.put(
+                        q: Queue = self._queues_dir.get_queue(
+                            SECURITY_MONITOR_QUEUE_NAME
+                        )
+                        q.put(
                             Event(
                                 source=self.event_source_name,
                                 destination=OPTICS_CONTROL_QUEUE_NAME,
@@ -183,7 +187,17 @@ class CentralControlSystem(BaseCustomProcess):
                             f"Получено одобрение изменения орбиты: высота={altitude/1000:.1f}км, "
                             f"наклонение={inclination:.3f}, RAAN={raan:.3f}",
                         )
-                        # Можно добавить дополнительную логику уведомления клиента
+                        q: Queue = self._queues_dir.get_queue(
+                            SECURITY_MONITOR_QUEUE_NAME
+                        )
+                        q.put(
+                            Event(
+                                source=self.event_source_name,
+                                destination=SATELITE_QUEUE_NAME,
+                                operation="change_orbit",
+                                parameters=(altitude, inclination, raan),
+                            )
+                        )
 
                     case "orbit_change_rejected":
                         # Получен отказ в изменении орбиты
@@ -194,7 +208,6 @@ class CentralControlSystem(BaseCustomProcess):
                         )
                         for violation in violations:
                             self._log_message(LOG_ERROR, f"- {violation}")
-                        # Можно добавить дополнительную логику уведомления клиента
 
                     case "orbit_changed":
                         # Получено уведомление об изменении орбиты
@@ -204,7 +217,6 @@ class CentralControlSystem(BaseCustomProcess):
                             f"Орбита изменена: высота={altitude/1000:.1f}км, "
                             f"наклонение={inclination:.3f}, RAAN={raan:.3f}",
                         )
-                        # Можно добавить дополнительную логику уведомления клиента
 
                     case "photo_processed":
                         # Изображение обработано оптическим модулем
@@ -217,10 +229,10 @@ class CentralControlSystem(BaseCustomProcess):
                                 f"Снимок разрешен, отправляем на сохранение: ({lat:.3f},{lon:.3f})",
                             )
                             # Отправляем в хранилище изображений
-                            image_storage_q = self._queues_dir.get_queue(
+                            q: Queue = self._queues_dir.get_queue(
                                 IMAGE_STORAGE_QUEUE_NAME
                             )
-                            image_storage_q.put(
+                            q.put(
                                 Event(
                                     source=self.event_source_name,
                                     destination=IMAGE_STORAGE_QUEUE_NAME,
@@ -241,123 +253,20 @@ class CentralControlSystem(BaseCustomProcess):
                             LOG_INFO,
                             f"Изображение успешно сохранено: ({lat:.3f},{lon:.3f}), время={timestamp}",
                         )
-                        # Можно добавить уведомление клиента или другую логику
 
-                    case "auth_result":
-                        # Получен результат аутентификации от модуля авторизации
-                        auth_data = event.parameters
-                        username = auth_data["username"]
-                        success = auth_data["success"]
-                        permissions = auth_data["permissions"]
-                        is_authorized = auth_data["is_authorized_user"]
-
+                    case "get_all_images":
                         self._log_message(
-                            LOG_INFO,
-                            f"Получен результат аутентификации для {username}: {'успех' if success else 'ошибка'}",
+                            LOG_INFO, "Получен запрос на получение всех изображений"
                         )
-
-                        # Передаем флаг авторизации в монитор безопасности
-                        security_monitor_q = self._queues_dir.get_queue(
+                        q: Queue = self._queues_dir.get_queue(
                             SECURITY_MONITOR_QUEUE_NAME
                         )
-                        security_monitor_q.put(
+                        q.put(
                             Event(
                                 source=self.event_source_name,
-                                destination=SECURITY_MONITOR_QUEUE_NAME,
-                                operation="update_auth_status",
-                                parameters={
-                                    "username": username,
-                                    "is_authorized_user": is_authorized,
-                                },
-                            )
-                        )
-
-                        # В реальной системе можно добавить логику работы с клиентским приложением
-
-                    case "permission_check_result":
-                        # Получен результат проверки прав от модуля авторизации
-                        perm_data = event.parameters
-                        username = perm_data["username"]
-                        permission = perm_data["permission"]
-                        has_permission = perm_data["has_permission"]
-                        is_authorized = perm_data["is_authorized_user"]
-
-                        self._log_message(
-                            LOG_INFO,
-                            f"Получен результат проверки прав {permission} для {username}: {'имеет' if has_permission else 'не имеет'}",
-                        )
-
-                        # Передаем флаг авторизации в монитор безопасности
-                        security_monitor_q = self._queues_dir.get_queue(
-                            SECURITY_MONITOR_QUEUE_NAME
-                        )
-                        security_monitor_q.put(
-                            Event(
-                                source=self.event_source_name,
-                                destination=SECURITY_MONITOR_QUEUE_NAME,
-                                operation="update_auth_status",
-                                parameters={
-                                    "username": username,
-                                    "is_authorized_user": is_authorized,
-                                    "has_permission": has_permission,
-                                    "permission": permission,
-                                },
-                            )
-                        )
-
-                        # Если у пользователя есть права, можем обработать запрос дальше
-                        # В зависимости от типа разрешения
-                        if has_permission and is_authorized:
-                            match permission:
-                                case "make_photo":
-                                    self._log_message(
-                                        LOG_INFO,
-                                        f"Разрешено фотографирование для {username}",
-                                    )
-                                    # Логика разрешения фотографирования
-
-                                case "change_orbit":
-                                    self._log_message(
-                                        LOG_INFO,
-                                        f"Разрешено изменение орбиты для {username}",
-                                    )
-                                    # Логика разрешения изменения орбиты
-
-                                case "edit_restrictions":
-                                    self._log_message(
-                                        LOG_INFO,
-                                        f"Разрешено редактирование ограничений для {username}",
-                                    )
-                                    # Логика разрешения редактирования ограничений
-                        else:
-                            self._log_message(
-                                LOG_WARNING,
-                                f"Отказано в {permission} для пользователя {username}: {'не авторизован' if not is_authorized else 'нет прав'}",
-                            )
-
-                    case "session_ended":
-                        # Получено уведомление о завершении сессии
-                        session_data = event.parameters
-                        username = session_data["username"]
-
-                        self._log_message(
-                            LOG_INFO,
-                            f"Получено уведомление о завершении сессии пользователя {username}",
-                        )
-
-                        # Уведомляем монитор безопасности
-                        security_monitor_q = self._queues_dir.get_queue(
-                            SECURITY_MONITOR_QUEUE_NAME
-                        )
-                        security_monitor_q.put(
-                            Event(
-                                source=self.event_source_name,
-                                destination=SECURITY_MONITOR_QUEUE_NAME,
-                                operation="update_auth_status",
-                                parameters={
-                                    "username": username,
-                                    "is_authorized_user": False,
-                                },
+                                destination=IMAGE_STORAGE_QUEUE_NAME,
+                                operation="get_all_images",
+                                parameters=None,
                             )
                         )
 

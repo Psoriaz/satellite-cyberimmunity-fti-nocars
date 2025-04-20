@@ -8,7 +8,7 @@ from src.system.config import (
     LOG_ERROR,
     LOG_INFO,
     DEFAULT_LOG_LEVEL,
-    ORBIT_DRAWER_QUEUE_NAME,
+    SECURITY_MONITOR_QUEUE_NAME,
     RESTRICTED_ZONE_STORAGE_QUEUE_NAME,
     RESTRICTED_ZONES_MANAGER_QUEUE_NAME,
 )
@@ -16,7 +16,7 @@ from src.satellite_control_system.restricted_zone import RestrictedZone
 
 
 class RestrictedZonesStorage(BaseCustomProcess):
-    """Хранилище запрещенных зон (зеленый домен)"""
+    """Хранилище запрещенных зон"""
 
     log_prefix = "[ZONES]"
     event_source_name = RESTRICTED_ZONE_STORAGE_QUEUE_NAME
@@ -41,11 +41,6 @@ class RestrictedZonesStorage(BaseCustomProcess):
                 if not isinstance(event, Event):
                     continue
 
-                # Проверка источника запроса
-                if event.source != RESTRICTED_ZONES_MANAGER_QUEUE_NAME:
-                    self._log_message(LOG_ERROR, f"Отклонен запрос от {event.source}")
-                    continue
-
                 match event.operation:
                     case "add_restricted_zone":
                         # Добавление зоны
@@ -68,23 +63,18 @@ class RestrictedZonesStorage(BaseCustomProcess):
                             )
 
                             # Отрисовка зоны
-                            drawer_q = self._queues_dir.get_queue(
-                                ORBIT_DRAWER_QUEUE_NAME
+                            q: Queue = self._queues_dir.get_queue(
+                                SECURITY_MONITOR_QUEUE_NAME
                             )
-                            drawer_q.put(
+                            q.put(
                                 Event(
                                     source=self.event_source_name,
-                                    destination=ORBIT_DRAWER_QUEUE_NAME,
-                                    operation="draw_restricted_zone",
-                                    parameters=zone,
+                                    destination=RESTRICTED_ZONES_MANAGER_QUEUE_NAME,
+                                    operation="draw_zone",
+                                    parameters=(zone_id, zone),
                                 )
                             )
-
-                            # Уведомление об успехе
-                            manager_q = self._queues_dir.get_queue(
-                                RESTRICTED_ZONES_MANAGER_QUEUE_NAME
-                            )
-                            manager_q.put(
+                            q.put(
                                 Event(
                                     source=self.event_source_name,
                                     destination=RESTRICTED_ZONES_MANAGER_QUEUE_NAME,
@@ -109,22 +99,10 @@ class RestrictedZonesStorage(BaseCustomProcess):
                         zone = self._zones[zone_id]
                         del self._zones[zone_id]
 
-                        # Обновление отображения
-                        drawer_q = self._queues_dir.get_queue(ORBIT_DRAWER_QUEUE_NAME)
-                        drawer_q.put(
-                            Event(
-                                source=self.event_source_name,
-                                destination=ORBIT_DRAWER_QUEUE_NAME,
-                                operation="remove_restricted_zone",
-                                parameters=zone,
-                            )
+                        q: Queue = self._queues_dir.get_queue(
+                            SECURITY_MONITOR_QUEUE_NAME
                         )
-
-                        # Уведомление об успехе
-                        manager_q = self._queues_dir.get_queue(
-                            RESTRICTED_ZONES_MANAGER_QUEUE_NAME
-                        )
-                        manager_q.put(
+                        q.put(
                             Event(
                                 source=self.event_source_name,
                                 destination=RESTRICTED_ZONES_MANAGER_QUEUE_NAME,
@@ -136,10 +114,10 @@ class RestrictedZonesStorage(BaseCustomProcess):
                     case "get_all_zones":
                         # Отправка списка зон
                         zones_list = list(self._zones.values())
-                        manager_q = self._queues_dir.get_queue(
-                            RESTRICTED_ZONES_MANAGER_QUEUE_NAME
+                        q: Queue = self._queues_dir.get_queue(
+                            SECURITY_MONITOR_QUEUE_NAME
                         )
-                        manager_q.put(
+                        q.put(
                             Event(
                                 source=self.event_source_name,
                                 destination=RESTRICTED_ZONES_MANAGER_QUEUE_NAME,

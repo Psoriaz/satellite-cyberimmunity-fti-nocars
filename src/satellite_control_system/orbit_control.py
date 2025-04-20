@@ -4,15 +4,13 @@ from src.system.custom_process import BaseCustomProcess
 from src.system.queues_dir import QueuesDirectory
 from src.system.event_types import Event
 from src.system.config import (
-    LOG_DEBUG,
     LOG_ERROR,
     LOG_INFO,
     DEFAULT_LOG_LEVEL,
     ORBIT_CONTROL_QUEUE_NAME,
     CENTRAL_CONTROL_SYSTEM_QUEUE_NAME,
-    SATELITE_QUEUE_NAME,
+    SECURITY_MONITOR_QUEUE_NAME,
 )
-import math
 
 
 class OrbitControl(BaseCustomProcess):
@@ -30,25 +28,15 @@ class OrbitControl(BaseCustomProcess):
             event_source_name=OrbitControl.event_source_name,
             log_level=log_level,
         )
-        # Ограничения орбиты (будут установлены модулем-ограничителем)
-        self._orbit_limits = {
-            "min_altitude": 300e3,  # По умолчанию
-            "max_altitude": 1500e3,
-            "min_inclination": 0.0,
-            "max_inclination": 3.14,
-            "max_delta_altitude": 200e3,
-            "max_delta_inclination": 0.5,
-        }
+        self._orbit_limits = {}
         self._log_message(LOG_INFO, "Система контроля орбиты создана")
 
     def _check_orbit_parameters(
         self,
         new_altitude,
         new_inclination,
-        new_raan,
         current_altitude=None,
         current_inclination=None,
-        current_raan=None,
     ):
         """Проверка параметров орбиты на соответствие ограничениям"""
         violations = []
@@ -105,7 +93,7 @@ class OrbitControl(BaseCustomProcess):
 
                 match event.operation:
                     case "set_orbit_limits":
-                        # Установка ограничений орбиты от модуля-ограничителя
+                        # Установка ограничений орбиты от модуля ограничителя
                         self._orbit_limits = event.parameters
                         self._log_message(
                             LOG_INFO,
@@ -139,10 +127,10 @@ class OrbitControl(BaseCustomProcess):
                                 self._log_message(LOG_ERROR, f"- {violation}")
 
                             # Уведомляем ЦСУ об отклонении запроса
-                            central_q = self._queues_dir.get_queue(
-                                CENTRAL_CONTROL_SYSTEM_QUEUE_NAME
+                            q: Queue = self._queues_dir.get_queue(
+                                SECURITY_MONITOR_QUEUE_NAME
                             )
-                            central_q.put(
+                            q.put(
                                 Event(
                                     source=self.event_source_name,
                                     destination=CENTRAL_CONTROL_SYSTEM_QUEUE_NAME,
@@ -154,31 +142,14 @@ class OrbitControl(BaseCustomProcess):
                             # Ограничения соблюдены - разрешаем изменение орбиты
                             self._log_message(
                                 LOG_INFO,
-                                "Запрос на изменение орбиты соответствует ограничениям, отправляем в спутник",
-                            )
-
-                            # Отправляем команду спутнику
-                            satellite_q = self._queues_dir.get_queue(
-                                SATELITE_QUEUE_NAME
-                            )
-                            satellite_q.put(
-                                Event(
-                                    source=self.event_source_name,
-                                    destination=SATELITE_QUEUE_NAME,
-                                    operation="change_orbit",
-                                    parameters=[
-                                        new_altitude,
-                                        new_inclination,
-                                        new_raan,
-                                    ],
-                                )
+                                "Запрос на изменение орбиты соответствует ограничениям, отправляем в ЦСУ",
                             )
 
                             # Уведомляем ЦСУ об одобрении запроса
-                            central_q = self._queues_dir.get_queue(
-                                CENTRAL_CONTROL_SYSTEM_QUEUE_NAME
+                            q: Queue = self._queues_dir.get_queue(
+                                SECURITY_MONITOR_QUEUE_NAME
                             )
-                            central_q.put(
+                            q.put(
                                 Event(
                                     source=self.event_source_name,
                                     destination=CENTRAL_CONTROL_SYSTEM_QUEUE_NAME,

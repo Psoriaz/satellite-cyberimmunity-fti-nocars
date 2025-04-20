@@ -11,8 +11,9 @@ from src.system.config import (
     ORBIT_MONITORING_QUEUE_NAME,
     ORBIT_CONTROL_QUEUE_NAME,
     CENTRAL_CONTROL_SYSTEM_QUEUE_NAME,
-    SATELITE_QUEUE_NAME,
+    SECURITY_MONITOR_QUEUE_NAME,
 )
+import numpy as np
 
 
 class OrbitMonitoring(BaseCustomProcess):
@@ -22,7 +23,14 @@ class OrbitMonitoring(BaseCustomProcess):
     event_source_name = ORBIT_MONITORING_QUEUE_NAME
     events_q_name = event_source_name
 
-    def __init__(self, queues_dir, log_level=DEFAULT_LOG_LEVEL):
+    def __init__(
+        self,
+        queues_dir,
+        log_level=DEFAULT_LOG_LEVEL,
+        initial_altitude=1000e3,
+        initial_inclination=np.pi / 3,
+        initial_raan=0,
+    ):
         super().__init__(
             log_prefix=OrbitMonitoring.log_prefix,
             queues_dir=queues_dir,
@@ -30,32 +38,17 @@ class OrbitMonitoring(BaseCustomProcess):
             event_source_name=OrbitMonitoring.event_source_name,
             log_level=log_level,
         )
-        # Текущие параметры орбиты - инициализируем начальными значениями
         self._current_orbit = {
-            "altitude": 1000e3,  # Начальное значение высоты
-            "inclination": None,
-            "raan": None,
+            "altitude": initial_altitude,
+            "inclination": initial_inclination,
+            "raan": initial_raan,
         }
         self._log_message(LOG_INFO, "Модуль мониторинга орбиты создан")
-
-        # Запрашиваем актуальные параметры орбиты при старте
-        self._request_orbit_params()
-
-    def _request_orbit_params(self):
-        """Запрос текущих параметров орбиты у спутника"""
-        try:
-            satellite_q = self._queues_dir.get_queue(SATELITE_QUEUE_NAME)
-            satellite_q.put(
-                Event(
-                    source=self.event_source_name,
-                    destination=SATELITE_QUEUE_NAME,
-                    operation="get_orbit_params",
-                    parameters=None,
-                )
-            )
-            self._log_message(LOG_INFO, "Запрошены текущие параметры орбиты")
-        except Exception as e:
-            self._log_message(LOG_ERROR, f"Ошибка при запросе параметров орбиты: {e}")
+        self._log_message(
+            LOG_INFO,
+            f"Начальные параметры орбиты: высота={initial_altitude/1000:.1f}км, "
+            f"наклонение={initial_inclination:.3f}, RAAN={initial_raan:.3f}",
+        )
 
     def _check_events_q(self):
         """Обработка запросов"""
@@ -83,10 +76,10 @@ class OrbitMonitoring(BaseCustomProcess):
                             )
 
                         # Передаем запрос в систему контроля орбиты с текущими параметрами
-                        orbit_control_q = self._queues_dir.get_queue(
-                            ORBIT_CONTROL_QUEUE_NAME
+                        q: Queue = self._queues_dir.get_queue(
+                            SECURITY_MONITOR_QUEUE_NAME
                         )
-                        orbit_control_q.put(
+                        q.put(
                             Event(
                                 source=self.event_source_name,
                                 destination=ORBIT_CONTROL_QUEUE_NAME,
@@ -94,10 +87,8 @@ class OrbitMonitoring(BaseCustomProcess):
                                 parameters=(
                                     new_altitude,
                                     new_inclination,
-                                    new_raan,
                                     self._current_orbit["altitude"],
                                     self._current_orbit["inclination"],
-                                    self._current_orbit["raan"],
                                 ),
                             )
                         )
@@ -107,91 +98,6 @@ class OrbitMonitoring(BaseCustomProcess):
                             f"Текущая высота: {self._current_orbit['altitude']/1000:.1f}км",
                         )
 
-                    # Для обработки ответа от спутника используем правильное имя операции
-                    case "update_orbit_data":
-                        # Получены параметры орбиты от спутника
-                        altitude, inclination, raan = event.parameters
-
-                        old_altitude = self._current_orbit["altitude"]
-                        self._current_orbit = {
-                            "altitude": altitude,
-                            "inclination": inclination,
-                            "raan": raan,
-                        }
-
-                        self._log_message(
-                            LOG_INFO,
-                            f"Получены параметры орбиты от спутника: высота={altitude/1000:.1f}км, "
-                            f"наклонение={inclination:.3f}, RAAN={raan:.3f}",
-                        )
-
-                        # Если это первое получение или изменение орбиты, уведомляем ЦСУ
-                        if old_altitude is None or old_altitude != altitude:
-                            central_q = self._queues_dir.get_queue(
-                                CENTRAL_CONTROL_SYSTEM_QUEUE_NAME
-                            )
-                            central_q.put(
-                                Event(
-                                    source=self.event_source_name,
-                                    destination=CENTRAL_CONTROL_SYSTEM_QUEUE_NAME,
-                                    operation="orbit_changed",
-                                    parameters=(altitude, inclination, raan),
-                                )
-                            )
-                            self._log_message(
-                                LOG_INFO,
-                                "Отправлено уведомление об обновлении орбиты в ЦСУ",
-                            )
-
-                    # Альтернативное имя операции, которое может прийти от спутника
-                    case "post_orbit_params":
-                        # Получены параметры орбиты от спутника
-                        altitude, inclination, raan = event.parameters
-
-                        old_altitude = self._current_orbit["altitude"]
-                        self._current_orbit = {
-                            "altitude": altitude,
-                            "inclination": inclination,
-                            "raan": raan,
-                        }
-
-                        self._log_message(
-                            LOG_INFO,
-                            f"Получены параметры орбиты от спутника (post): высота={altitude/1000:.1f}км, "
-                            f"наклонение={inclination:.3f}, RAAN={raan:.3f}",
-                        )
-
-                        # Уведомляем ЦСУ об изменении орбиты
-                        central_q = self._queues_dir.get_queue(
-                            CENTRAL_CONTROL_SYSTEM_QUEUE_NAME
-                        )
-                        central_q.put(
-                            Event(
-                                source=self.event_source_name,
-                                destination=CENTRAL_CONTROL_SYSTEM_QUEUE_NAME,
-                                operation="orbit_changed",
-                                parameters=(altitude, inclination, raan),
-                            )
-                        )
-
-                    # Еще одно возможное имя операции для ответа от спутника
-                    case "current_orbit":
-                        # Получены параметры орбиты от спутника
-                        altitude, inclination, raan = event.parameters
-
-                        old_altitude = self._current_orbit["altitude"]
-                        self._current_orbit = {
-                            "altitude": altitude,
-                            "inclination": inclination,
-                            "raan": raan,
-                        }
-
-                        self._log_message(
-                            LOG_INFO,
-                            f"Получены текущие параметры орбиты от спутника: высота={altitude/1000:.1f}км, "
-                            f"наклонение={inclination:.3f}, RAAN={raan:.3f}",
-                        )
-
             except Empty:
                 break
             except Exception as e:
@@ -199,9 +105,6 @@ class OrbitMonitoring(BaseCustomProcess):
 
     def run(self):
         self._log_message(LOG_INFO, "Модуль мониторинга орбиты запущен")
-
-        # Запрашиваем параметры орбиты сразу при запуске
-        self._request_orbit_params()
 
         while not self._quit:
             self._check_events_q()

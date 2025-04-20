@@ -11,11 +11,15 @@ from src.system.config import (
     DEFAULT_LOG_LEVEL,
     IMAGE_STORAGE_QUEUE_NAME,
     CENTRAL_CONTROL_SYSTEM_QUEUE_NAME,
+    SECURITY_MONITOR_QUEUE_NAME,
 )
 
 
 class ImageStorage(BaseCustomProcess):
-    """Хранилище изображений - сохраняет и предоставляет доступ к снимкам"""
+    """
+    Хранилище изображений - сохраняет и предоставляет доступ к снимкам
+    'Изображения' представляют собой кортеж в виде (lat, lon, timestamp)
+    """
 
     log_prefix = "[IMG_STOR]"
     event_source_name = IMAGE_STORAGE_QUEUE_NAME
@@ -29,7 +33,7 @@ class ImageStorage(BaseCustomProcess):
             event_source_name=ImageStorage.event_source_name,
             log_level=log_level,
         )
-        # Хранилище изображений: key = (lat, lon), value = (timestamp, metadata)
+        # Хранилище изображений
         self._images = {}
         self._log_message(LOG_INFO, "Хранилище изображений создано")
 
@@ -44,9 +48,7 @@ class ImageStorage(BaseCustomProcess):
                 match event.operation:
                     case "save_image":
                         # Получен снимок для сохранения
-                        if (
-                            len(event.parameters) >= 2
-                        ):  # Проверяем, что есть хотя бы координаты
+                        if len(event.parameters) >= 2:
                             lat, lon = event.parameters[0], event.parameters[1]
                             # Если есть timestamp, используем его, иначе текущее время
                             timestamp = (
@@ -55,7 +57,7 @@ class ImageStorage(BaseCustomProcess):
                                 else time.time()
                             )
 
-                            # Сохраняем изображение с координатами в качестве ключа
+                            # Сохраняем изображение
                             image_key = (lat, lon)
                             self._images[image_key] = {
                                 "timestamp": timestamp,
@@ -68,10 +70,10 @@ class ImageStorage(BaseCustomProcess):
                             )
 
                             # Уведомляем ЦСУ о сохранении снимка
-                            central_q = self._queues_dir.get_queue(
-                                CENTRAL_CONTROL_SYSTEM_QUEUE_NAME
+                            q: Queue = self._queues_dir.get_queue(
+                                SECURITY_MONITOR_QUEUE_NAME
                             )
-                            central_q.put(
+                            q.put(
                                 Event(
                                     source=self.event_source_name,
                                     destination=CENTRAL_CONTROL_SYSTEM_QUEUE_NAME,
@@ -83,45 +85,6 @@ class ImageStorage(BaseCustomProcess):
                             self._log_message(
                                 LOG_ERROR,
                                 f"Недостаточно параметров для сохранения изображения: {event.parameters}",
-                            )
-
-                    case "get_image":
-                        # Запрос на получение изображения по координатам
-                        lat, lon = event.parameters
-                        image_key = (lat, lon)
-
-                        if image_key in self._images:
-                            image_data = self._images[image_key]
-                            self._log_message(
-                                LOG_INFO,
-                                f"Запрошено изображение с координатами ({lat:.3f},{lon:.3f})",
-                            )
-
-                            # Отправляем данные изображения запросившему модулю
-                            response_q = self._queues_dir.get_queue(event.source)
-                            response_q.put(
-                                Event(
-                                    source=self.event_source_name,
-                                    destination=event.source,
-                                    operation="image_data",
-                                    parameters=(lat, lon, image_data["timestamp"]),
-                                )
-                            )
-                        else:
-                            self._log_message(
-                                LOG_ERROR,
-                                f"Запрошено несуществующее изображение с координатами ({lat:.3f},{lon:.3f})",
-                            )
-
-                            # Отправляем сообщение об отсутствии изображения
-                            response_q = self._queues_dir.get_queue(event.source)
-                            response_q.put(
-                                Event(
-                                    source=self.event_source_name,
-                                    destination=event.source,
-                                    operation="image_not_found",
-                                    parameters=(lat, lon),
-                                )
                             )
 
                     case "get_all_images":

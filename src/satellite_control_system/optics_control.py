@@ -11,11 +11,12 @@ from src.system.config import (
     OPTICS_CONTROL_QUEUE_NAME,
     ORBIT_DRAWER_QUEUE_NAME,
     CENTRAL_CONTROL_SYSTEM_QUEUE_NAME,
+    SECURITY_MONITOR_QUEUE_NAME,
 )
 
 
 class OpticsControl(BaseCustomProcess):
-    """Модуль управления оптической аппаратурой"""
+    """Модуль контроля оптики"""
 
     log_prefix = "[OPTIC]"
     event_source_name = OPTICS_CONTROL_QUEUE_NAME
@@ -29,13 +30,13 @@ class OpticsControl(BaseCustomProcess):
             event_source_name=OpticsControl.event_source_name,
             log_level=log_level,
         )
-        # Кэш зон и проверок
+
         self._zones_cache = []
         self._pending_photos = {}
         self._log_message(LOG_INFO, "Модуль управления оптикой создан")
 
     def _check_point_in_zones(self, lat, lon):
-        """Проверка, находится ли точка в запрещенных зонах на стороне оптики"""
+        """Проверка, находится ли точка в запрещенных зонах"""
         for zone in self._zones_cache:
             if (
                 zone.lat_bot_left <= lat <= zone.lat_top_right
@@ -62,7 +63,6 @@ class OpticsControl(BaseCustomProcess):
                     continue
 
                 match event.operation:
-                    # Обновление списка зон от центральной системы
                     case "zones_update":
                         self._zones_cache = event.parameters
                         self._log_message(
@@ -70,7 +70,6 @@ class OpticsControl(BaseCustomProcess):
                             f"Получено обновление зон от ЦСУ: {len(self._zones_cache)} зон",
                         )
 
-                    # Обработка координат от камеры
                     case "camera_update":
                         lat, lon = event.parameters
                         self._log_message(
@@ -78,7 +77,7 @@ class OpticsControl(BaseCustomProcess):
                             f"Получены координаты спутника: {lat:.3f}, {lon:.3f}",
                         )
 
-                        # Проверяем координаты локально
+                        # Проверяем координаты
                         is_restricted = self._check_point_in_zones(lat, lon)
                         self._pending_photos[(lat, lon)] = is_restricted
 
@@ -87,7 +86,6 @@ class OpticsControl(BaseCustomProcess):
                             f"Результат локальной проверки ({lat:.3f},{lon:.3f}): {'ЗАПРЕЩЕНО' if is_restricted else 'разрешено'}",
                         )
 
-                    # Обработка фотографий
                     case "post_photo":
                         lat, lon = event.parameters
                         self._log_message(
@@ -109,10 +107,10 @@ class OpticsControl(BaseCustomProcess):
                             )
 
                             # Уведомляем ЦСУ о блокировке снимка
-                            central_q = self._queues_dir.get_queue(
-                                CENTRAL_CONTROL_SYSTEM_QUEUE_NAME
+                            q: Queue = self._queues_dir.get_queue(
+                                SECURITY_MONITOR_QUEUE_NAME
                             )
-                            central_q.put(
+                            q.put(
                                 Event(
                                     source=self.event_source_name,
                                     destination=CENTRAL_CONTROL_SYSTEM_QUEUE_NAME,
@@ -120,8 +118,8 @@ class OpticsControl(BaseCustomProcess):
                                     parameters=(
                                         lat,
                                         lon,
-                                        True,
-                                    ),  # True означает, что снимок запрещен
+                                        True,  # снимок запрещен
+                                    ),
                                 )
                             )
                         else:
@@ -131,10 +129,10 @@ class OpticsControl(BaseCustomProcess):
                                 f"Снимок разрешен, отправка на отрисовку: {lat:.3f}, {lon:.3f}",
                             )
 
-                            drawer_q = self._queues_dir.get_queue(
-                                ORBIT_DRAWER_QUEUE_NAME
+                            q: Queue = self._queues_dir.get_queue(
+                                SECURITY_MONITOR_QUEUE_NAME
                             )
-                            drawer_q.put(
+                            q.put(
                                 Event(
                                     source=self.event_source_name,
                                     destination=ORBIT_DRAWER_QUEUE_NAME,
@@ -144,10 +142,10 @@ class OpticsControl(BaseCustomProcess):
                             )
 
                             # Уведомляем ЦСУ об успешной обработке снимка
-                            central_q = self._queues_dir.get_queue(
-                                CENTRAL_CONTROL_SYSTEM_QUEUE_NAME
+                            q: Queue = self._queues_dir.get_queue(
+                                SECURITY_MONITOR_QUEUE_NAME
                             )
-                            central_q.put(
+                            q.put(
                                 Event(
                                     source=self.event_source_name,
                                     destination=CENTRAL_CONTROL_SYSTEM_QUEUE_NAME,
@@ -155,8 +153,8 @@ class OpticsControl(BaseCustomProcess):
                                     parameters=(
                                         lat,
                                         lon,
-                                        False,
-                                    ),  # False означает, что снимок разрешен
+                                        False,  # снимок разрешен
+                                    ),
                                 )
                             )
 
